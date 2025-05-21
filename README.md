@@ -10,11 +10,11 @@ It can be configured to award badges based on participation in a forum within th
 
 Currently ratings must be enabled for the forum as the criteria uses the COUNT of a posts ratings to determine awarding.
 
-Current criteria are:
-    Achieving X ratings on a single post.
-    Achieving X ratings on posts across whole forum.
-    Posting X posts with atleast one rating across forum.
-    Creating a post that gets X unique repliers.
+Current criteria are:<br>
+    - Achieving X ratings on a single post.<br>
+    - Achieving X ratings on posts across whole forum.<br>
+    - Posting X posts with atleast one rating across forum.<br>
+    - Creating a post that gets X unique repliers.<br>
 
 To use this plugin add award_criteria_social.php to /moodle/badges/criteria.
 You must also enable it in /moodle/badges/classes/badge.php.
