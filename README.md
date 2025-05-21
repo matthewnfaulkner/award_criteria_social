@@ -18,5 +18,5 @@ Current criteria are:<br>
 
 To use this plugin add award_criteria_social.php to /moodle/badges/criteria.
 You must also enable it in /moodle/badges/classes/badge.php.
-In the function get_accepted_criteria add BADGE_CRITERIA_TYPE_SOCIAL to the array of 
-criteria types for badge type BADGE_TYPE_COURSE.
+In the function <b>get_accepted_criteria()</b> add <b>BADGE_CRITERIA_TYPE_SOCIAL</b> to the array of 
+criteria types for badge type <b>BADGE_TYPE_COURSE</b>.
