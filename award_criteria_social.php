@@ -72,7 +72,7 @@ class award_criteria_social extends award_criteria {
      *
      * @var array
      */
-    public $optional_params = array('bydate', 'socialtype', 'socialvalue', 'forum');
+    public $optional_params = array('bydate', 'socialtype', 'socialvalue', 'forum', 'allforums');
 
     /**
      * Types of social participation criteria
@@ -107,26 +107,20 @@ class award_criteria_social extends award_criteria {
     }
 
     /**
-     * Gets the module instance from the database and returns it.
-     * If no module instance exists this function returns false.
+     * Gets the forum instance from the database and returns it.
+     * If no forum instance exists this function returns false.
      * 
-     * @param int $cmid id of coursemodule
+     * @param int $forumid id of forum
      * 
-     * @return stdClass|bool
+     * @return mixed a fieldset object containing the first matching record, false or exception if error not found depending on mode
      */
-    private function get_mod_instance($cmid) {
+    private function get_forum_instance($forumid) {
         global $DB;
-        $rec = $DB->get_record_sql("SELECT md.name
-                               FROM {course_modules} cm,
-                                    {modules} md
-                               WHERE cm.id = ? AND
-                                     md.id = cm.module", array($cmid));
+        $rec = $DB->get_record_sql("SELECT f.name
+                               FROM {forum} f
+                               WHERE f.id = ? ", array($forumid));
 
-        if ($rec) {
-            return get_coursemodule_from_id($rec->name, $cmid);
-        } else {
-            return null;
-        }
+        return $rec;
     }
 
     /**
@@ -140,16 +134,28 @@ class award_criteria_social extends award_criteria {
         global $OUTPUT;
         $output = array();
         foreach ($this->params as $p) {
-            $mod = self::get_mod_instance($p['forum']);
-            if (!$mod) {
-                $str = $OUTPUT->error_text(get_string('error:nosuchmod', 'badges'));
-            } else {
-                $str = html_writer::tag('b', '"' . get_string('modulename', $mod->modname) . ' - ' . $mod->name . '"');
-                $str .= html_writer::tag('p', get_string($this->types[$p['socialtype']], 'badges', $p['socialvalue']));
+            $str = "";
+            if($p['allforums'] == 1){
+                $forums = $this->get_forums_in_course($this->course->id);
+                $forumouts = [];
+                foreach($forums as $forum){
+                    $forumouts[] = html_writer::tag('b', '"' . get_string('modulename', 'forum') . ' - ' . $forum->name . '"');
+                }
+                $str .=  html_writer::alist($forumouts, array(), 'ul');
+            }
+            else{
+                $mod = self::get_forum_instance($p['forum']);
+                if (!$mod) {
+                    $str .= $OUTPUT->error_text(get_string('error:nosuchmod', 'badges'));
+                } else {
+                    $str .= html_writer::tag('b', '"' . get_string('modulename', 'forum') . ' - ' . $mod->name . '"');
+                    
+                }
+            }
+            $str .= html_writer::tag('p', get_string($this->types[$p['socialtype']], 'badges', $p['socialvalue']));
                 if (isset($p['bydate'])) {
                     $str .= get_string('criteria_descr_bydate', 'badges', userdate($p['bydate'], get_string('strftimedate', 'core_langconfig')));
                 }
-            }
             $output[] = $str;
         }
 
@@ -170,7 +176,7 @@ class award_criteria_social extends award_criteria {
         $missing = false;
 
         $course = $this->course;
-        $mods = get_coursemodules_in_course('forum', $course->id, 'm.assessed');
+        $mods = $this->get_forums_in_course($course->id);
         
         if ($this->id !== 0) {
             $missing = !array_key_exists($this->params[1]['forum'], $mods);
@@ -191,9 +197,6 @@ class award_criteria_social extends award_criteria {
 
 
             foreach ($mods as $mod) {
-                if($mod->assessed != 5 && $mod->assessed != 2){
-                    continue;
-                }
                 $forumoptions[$mod->id] = $mod->name;
             }
 
@@ -217,6 +220,9 @@ class award_criteria_social extends award_criteria {
             
             
             if ($this->id !== 0) {
+                if(isset($this->params[1]['allforums'])) {
+                    $param['allforums'] = $this->params[1]['allforums'];
+                }
                 if(isset($this->params[1]['forum'])) {
                     $param['forum'] = $this->params[1]['forum'];
                 }
@@ -257,10 +263,17 @@ class award_criteria_social extends award_criteria {
         }
         $param = $this->params[1];
 
-        //get cm
-        list($course, $cm) = get_course_and_cm_from_cmid($param['forum'], 'forum', 0, $userid);
-
-
+        if($param['allforums'] == 1){
+            $forums = $this->get_forums_in_course($this->course->id);
+            if(empty($forums)){
+                return false;
+            }
+            list($forumwheres, $forumparams) = $DB->get_in_or_equal(array_keys($forums), SQL_PARAMS_NAMED);
+        }else{
+            $forumwheres = ' = :forumid';
+            $forumparams = ['forumid' => $param['forum']];
+        }
+        
         $overall = false;
 
         $selects = "SELECT p.id, d.forum";
@@ -269,20 +282,17 @@ class award_criteria_social extends award_criteria {
         $wheres = "WHERE
                 p.userid = :userid AND
                 r.component = :component AND r.ratingarea = :post
-                AND d.forum = :forum";
+                AND d.forum $forumwheres";
         $groupby = "";
         $having = "";
         $sqlparams = [
             'userid' => $userid,
             'component' => 'mod_forum',
             'post' => 'post',
-            'forum' => $cm->instance,
             'socialvalue' => $param['socialvalue']];
 
         //add date filters
         if (isset($param['bydate'])) {
-            $date = $cm->timemodified;
-            $check_date = ($date <= $param['bydate']);
             $wheres .= " AND p.modified > :bydate AND r.timemodified > :bydater";
             $sqlparams["bydate"] = $param['bydate'];
             $sqlparams["bydater"] = $param['bydate'];
@@ -325,7 +335,7 @@ class award_criteria_social extends award_criteria {
                     $groupby
                     $having";
 
-        $result = $DB->get_records_sql($fullquery, $sqlparams);
+        $result = $DB->get_records_sql($fullquery, array_merge($sqlparams, $forumparams));
 
         //any results return true.
         if(!empty($result)){
@@ -349,17 +359,23 @@ class award_criteria_social extends award_criteria {
         $params = array();
         
         $param = $this->params[1];
-        list($course, $cm) = get_course_and_cm_from_cmid($param['forum'], 'forum');
+         if($param['allforums'] == 1){
+            $forums = $this->get_forums_in_course($this->course->id);
+            if(empty($forums)){
+                return array('', '', '');
+            }
+            list($forumwheres, $forumparams) = $DB->get_in_or_equal(array_keys($forums), SQL_PARAMS_NAMED);
+        }else{
+            $forumwheres = ' = :forumid';
+            $forumparams = ['forumid' => $param['forum']];
+        }
 
-        $paramsforums = ['forum' => $cm->instance, 'modname' => 'forum'];
         $sql = "SELECT DISTINCT p.userid 
                 FROM {forum_posts} p 
                 INNER JOIN {forum_discussions} d ON p.discussion = d.id
-                INNER JOIN {course_modules} cm ON d.forum = cm.instance
-                INNER JOIN {modules} m ON m.id = cm.module
-                WHERE d.forum = :forum AND m.name = :modname";
+                WHERE d.forum $forumwheres";
 
-        $userids = $DB->get_records_sql($sql, $paramsforums);
+        $userids = $DB->get_records_sql($sql, $forumparams);
 
         $selects = "SELECT p.id, d.forum";
         $joins = "FROM {forum_discussions} d INNER JOIN 
@@ -367,19 +383,16 @@ class award_criteria_social extends award_criteria {
         $wheres = "WHERE
                 p.userid = :userid AND
                 r.component = :component AND r.ratingarea = :post
-                AND d.forum = :forum";
+                AND d.forum $forumwheres";
         $groupby = "";
         $having = "";
         $sqlparams = [
             'component' => 'mod_forum',
             'post' => 'post',
-            'forum' => $cm->instance,
             'socialvalue' => $param['socialvalue']];
-
+        $sqlparams = array_merge($sqlparams, $forumparams);
 
         if (isset($param['bydate'])) {
-            $date = $cm->timemodified;
-            $check_date = ($date <= $param['bydate']);
             $wheres .= " AND p.modified < :bydate AND r.timemodified < :bydater";
             $sqlparams["bydate"] = $param['bydate'];
             $sqlparams["bydater"] = $param['bydate'];
@@ -458,7 +471,9 @@ class award_criteria_social extends award_criteria {
             $parameter[] =& $mform->createElement('static', 'break_start_' . $param['id'], null,
                 '<div class="ml-3 mt-1 w-100 align-items-center">');
 
+            $parameter[] =& $mform->createElement('checkbox', 'allforums_1', get_string('allforums', 'badges'));
             $parameter[] =& $mform->createElement('select', 'forum_1', get_string('forum'), $param['forumoptions']);
+
             $parameter[] =& $mform->createElement('select', 'socialtype_1', get_string('types'), $this->types);
             
             $parameter[] =& $mform->createElement('text', 'socialvalue_1', get_string('socialvalue'));
@@ -474,11 +489,14 @@ class award_criteria_social extends award_criteria {
             $mform->addHelpButton('param_' . $prefix . '1', 'socialbadgecriteria', 'badges');
             $mform->addGroupRule('param_' . $prefix . '1', array(
                     'socialvalue_1' => array(array(get_string('err_numeric', 'form'), 'required', '', 'client'))));
+            
+            $mform->hideIf('forum_1', 'allforums_1', 'checked');
             $mform->disabledIf('bydate_1' . '[day]', 'bydate_1' . '[enabled]', 'notchecked');
             $mform->disabledIf('bydate_1' . '[month]', 'bydate_1' . '[enabled]', 'notchecked');
             $mform->disabledIf('bydate_1' . '[year]', 'bydate_1' . '[enabled]', 'notchecked');
 
             $mform->setDefault('socialtype_1', $param['socialtype']);
+            $mform->setDefault('allforums_1', $param['allforums']);
         }
 
         // Set default values.
@@ -496,5 +514,30 @@ class award_criteria_social extends award_criteria {
         if (isset($param['bydate'])) {
             $mform->setDefault('bydate_1', $param['bydate']);
         }
+    }
+
+
+
+        /**
+     * Returns all forums with rating enabled in course
+     *
+     * @param string $modulename The module name (forum, quiz, etc.)
+     * @param int $courseid The course id to get modules for
+     * @param string $extrafields extra fields starting with m.
+     * @return array Array of results
+     */
+    function get_forums_in_course($courseid) {
+        global $DB;
+
+        if (!core_component::is_valid_plugin_name('mod', 'forum')) {
+            throw new coding_exception('Invalid modulename parameter');
+        }
+        $params = array();
+        $params['courseid'] = $courseid;
+
+        return $DB->get_records_sql("SELECT m.*
+                                    FROM {forum} m
+                                    WHERE  m.course = :courseid AND
+                                            (m.assessed = 2 OR m.assessed = 5)", $params);
     }
 }
