@@ -72,7 +72,7 @@ class award_criteria_social extends award_criteria {
      *
      * @var array
      */
-    public $optional_params = array('bydate', 'socialtype', 'socialvalue', 'forum', 'allforums');
+    public $optional_params = array('bydate', 'socialtype', 'socialvalue', 'forum', 'allforums', 'refresh');
 
     /**
      * Types of social participation criteria
@@ -180,6 +180,7 @@ class award_criteria_social extends award_criteria {
         
         if ($this->id !== 0) {
             $missing = !array_key_exists($this->params[1]['forum'], $mods);
+            $missing = !isset($this->params[1]['allforums']);
         }
 
         if ($missing) {
@@ -235,6 +236,9 @@ class award_criteria_social extends award_criteria {
                 if(isset($this->params[1]['bydate'])) {
                     $param['bydate'] = $this->params[1]['bydate'];
                 }
+                if(isset($this->params[1]['refresh'])) {
+                    $param['refresh'] = $this->params[1]['refresh'];
+                }
             }
             $this->config_options($mform, $param);
             $none = false;
@@ -280,8 +284,9 @@ class award_criteria_social extends award_criteria {
         $joins = "FROM {forum_discussions} d INNER JOIN 
                 {forum_posts} p ON d.id = p.discussion";
         $wheres = "WHERE
-                p.userid = :userid AND
-                r.component = :component AND r.ratingarea = :post
+                p.userid = :userid 
+                AND r.component = :component 
+                AND r.ratingarea = :post
                 AND d.forum $forumwheres";
         $groupby = "";
         $having = "";
@@ -290,6 +295,13 @@ class award_criteria_social extends award_criteria {
             'component' => 'mod_forum',
             'post' => 'post',
             'socialvalue' => $param['socialvalue']];
+
+        if($param['refresh'] == 1){
+            $joins .=  " LEFT JOIN {badge_issued} bi ON p.userid = bi.userid AND bi.badgeid = :badgeid ";
+            $wheres .= " AND (bi.dateissued IS NULL OR (p.modified > bi.dateissued AND r.timemodified > bi.dateissued)) ";
+            $sqlparams['badgeid'] = $this->badgeid;
+        }
+
 
         //add date filters
         if (isset($param['bydate'])) {
@@ -301,23 +313,23 @@ class award_criteria_social extends award_criteria {
         //add social type specific sql
         switch ($param['socialtype']) {
             case SOCIAL_TYPE_SINGLE_POST_LIKES:
-                $joins .= " LEFT JOIN {rating} r ON p.id = r.itemid";
+                $joins .= "  JOIN {rating} r ON p.id = r.itemid ";
                 $groupby .= "GROUP BY p.id";
                 $having = "HAVING COUNT(r.id) >= :socialvalue";
                 break;
             case SOCIAL_TYPE_TOTAL_LIKES:
-                $joins .= " LEFT JOIN {rating} r ON p.id = r.itemid";
+                $joins .= "  JOIN {rating} r ON p.id = r.itemid";
                 $selects .= ", COUNT(r.id) as ratingcount";
                 $groupby .= "GROUP BY d.forum";
                 $having .= "HAVING count(r.id) >= :socialvalue";
                 break;
             case SOCIAL_TYPE_TOTAL_POSTS:
-                $joins .= " INNER JOIN {rating} r ON p.id = r.itemid";
+                $joins .= "  JOIN {rating} r ON p.id = r.itemid";
                 $groupby .= "GROUP BY d.forum";                  
                 $having = "HAVING COUNT(DISTINCT p.id) > :socialvalue";
                 break;
             case SOCIAL_TYPE_TOTAL_REPLIES:
-                $joins .= " LEFT JOIN {rating} r ON p.id = r.itemid";
+                $joins .= "  JOIN {rating} r ON p.id = r.itemid";
                 $wheres .= " AND p.id IN (
                                         SELECT parent FROM {forum_posts}
                                         WHERE userid <> :parentuid
@@ -370,6 +382,8 @@ class award_criteria_social extends award_criteria {
             $forumparams = ['forumid' => $param['forum']];
         }
 
+
+
         $sql = "SELECT DISTINCT p.userid 
                 FROM {forum_posts} p 
                 INNER JOIN {forum_discussions} d ON p.discussion = d.id
@@ -392,31 +406,39 @@ class award_criteria_social extends award_criteria {
             'socialvalue' => $param['socialvalue']];
         $sqlparams = array_merge($sqlparams, $forumparams);
 
+        if($param['refresh'] == 1){
+            $joins .=  " LEFT JOIN {badge_issued} bi ON p.userid = bi.userid AND bi.badgeid = :badgeid ";
+            $wheres .= " AND (bi.dateissued IS NULL OR (p.modified > bi.dateissued AND r.timemodified > bi.dateissued)) ";
+            $sqlparams['badgeid'] = $this->badgeid;
+        }
+
+
         if (isset($param['bydate'])) {
-            $wheres .= " AND p.modified < :bydate AND r.timemodified < :bydater";
+            $wheres .= " AND p.modified < :bydate AND r.timemodified < :bydate";
             $sqlparams["bydate"] = $param['bydate'];
             $sqlparams["bydater"] = $param['bydate'];
         }
+        
 
         switch ($param['socialtype']) {
             case SOCIAL_TYPE_SINGLE_POST_LIKES:
-                $joins .= " LEFT JOIN {rating} r ON p.id = r.itemid";
+                $joins .= " JOIN {rating} r ON p.id = r.itemid";
                 $groupby .= "GROUP BY p.id";
                 $having = "HAVING COUNT(r.id) >= :socialvalue";
                 break;
             case SOCIAL_TYPE_TOTAL_LIKES:
-                $joins .= " LEFT JOIN {rating} r ON p.id = r.itemid";
+                $joins .= "  JOIN {rating} r ON p.id = r.itemid";
                 $selects .= ", COUNT(r.id) as ratingcount";
                 $groupby .= "GROUP BY d.forum";
                 $having .= "HAVING count(r.id) >= :socialvalue";
                 break;
             case SOCIAL_TYPE_TOTAL_POSTS:
-                $joins .= " INNER JOIN {rating} r ON p.id = r.itemid";
+                $joins .= "  JOIN {rating} r ON p.id = r.itemid";
                 $groupby .= "GROUP BY d.forum";                  
                 $having = "HAVING COUNT(DISTINCT p.id) > :socialvalue";
                 break;
             case SOCIAL_TYPE_TOTAL_REPLIES:
-                $joins .= " LEFT JOIN {rating} r ON p.id = r.itemid";
+                $joins .= "  JOIN {rating} r ON p.id = r.itemid";
                 $wheres .= " AND p.id IN (
                                         SELECT parent FROM {forum_posts}
                                         WHERE userid <> :parentuid
@@ -438,7 +460,7 @@ class award_criteria_social extends award_criteria {
                 global $DB;
                 $params = array_merge($sqlparams, ['userid' => $user->userid, 'parentuid' => $user->userid]);
                 $result = $DB->get_records_sql($fullquery, $params);
-                return empty($result);
+                return !empty($result);
             }
         ));
 
@@ -448,7 +470,7 @@ class award_criteria_social extends award_criteria {
         $where = "";
         if (!empty($useridsbadgeable)) {
             list($wherepart, $params) = $DB->get_in_or_equal($useridsbadgeable, SQL_PARAMS_NAMED);
-            $where = " AND u.id " . $wherepart;
+            $where = " OR u.id " . $wherepart;
         }
         return array($join, $where, $params);
         
@@ -484,6 +506,8 @@ class award_criteria_social extends award_criteria {
                 $parameter[] =& $mform->createElement('date_selector', 'bydate_1', "", array('optional' => true));
             }
 
+            $parameter[] =& $mform->createElement('advcheckbox', 'refresh_1', get_string('refresh', 'badges'));
+            
             $parameter[] =& $mform->createElement('static', 'break_end_1', null, '</div>');
             $mform->addGroup($parameter, 'param_' . $prefix . '1', get_string('socialbadgecriteria', 'badges'), array(' '), false);
             $mform->addHelpButton('param_' . $prefix . '1', 'socialbadgecriteria', 'badges');
@@ -497,6 +521,7 @@ class award_criteria_social extends award_criteria {
 
             $mform->setDefault('socialtype_1', $param['socialtype']);
             $mform->setDefault('allforums_1', $param['allforums']);
+            $mform->setDefault('refresh_1', $param['refresh']);
         }
 
         // Set default values.
@@ -513,6 +538,9 @@ class award_criteria_social extends award_criteria {
         }
         if (isset($param['bydate'])) {
             $mform->setDefault('bydate_1', $param['bydate']);
+        }
+        if (isset($param['refresh'])) {
+            $mform->setDefault('refresh_1', $param['refresh']);
         }
     }
 
