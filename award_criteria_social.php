@@ -506,10 +506,12 @@ class award_criteria_social extends award_criteria {
                 $parameter[] =& $mform->createElement('date_selector', 'bydate_1', "", array('optional' => true));
             }
 
-            $parameter[] =& $mform->createElement('advcheckbox', 'refresh_1', get_string('refresh', 'badges'));
+            $parameter[] =& $mform->createElement('advcheckbox', 'refresh_1', get_string('refresh', 'badges'), get_string('refresh_help', 'badges'));
+            
             
             $parameter[] =& $mform->createElement('static', 'break_end_1', null, '</div>');
             $mform->addGroup($parameter, 'param_' . $prefix . '1', get_string('socialbadgecriteria', 'badges'), array(' '), false);
+            
             $mform->addHelpButton('param_' . $prefix . '1', 'socialbadgecriteria', 'badges');
             $mform->addGroupRule('param_' . $prefix . '1', array(
                     'socialvalue_1' => array(array(get_string('err_numeric', 'form'), 'required', '', 'client'))));
