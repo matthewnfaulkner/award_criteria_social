@@ -406,7 +406,7 @@ class award_criteria_social extends award_criteria {
             'socialvalue' => $param['socialvalue']];
         $sqlparams = array_merge($sqlparams, $forumparams);
 
-        if($param['refresh'] == 1){
+        if($refresh = $param['refresh'] == 1){
             $joins .=  " LEFT JOIN {badge_issued} bi ON p.userid = bi.userid AND bi.badgeid = :badgeid ";
             $wheres .= " AND (bi.dateissued IS NULL OR (p.modified > bi.dateissued AND r.timemodified > bi.dateissued)) ";
             $sqlparams['badgeid'] = $this->badgeid;
@@ -470,7 +470,8 @@ class award_criteria_social extends award_criteria {
         $where = "";
         if (!empty($useridsbadgeable)) {
             list($wherepart, $params) = $DB->get_in_or_equal($useridsbadgeable, SQL_PARAMS_NAMED);
-            $where = " OR u.id " . $wherepart;
+            $andOr = $refresh ? " OR " : " AND ";
+            $where = " $andOr u.id " . $wherepart;
         }
         return array($join, $where, $params);
         
@@ -511,7 +512,7 @@ class award_criteria_social extends award_criteria {
             
             $parameter[] =& $mform->createElement('static', 'break_end_1', null, '</div>');
             $mform->addGroup($parameter, 'param_' . $prefix . '1', get_string('socialbadgecriteria', 'badges'), array(' '), false);
-            
+
             $mform->addHelpButton('param_' . $prefix . '1', 'socialbadgecriteria', 'badges');
             $mform->addGroupRule('param_' . $prefix . '1', array(
                     'socialvalue_1' => array(array(get_string('err_numeric', 'form'), 'required', '', 'client'))));
